@@ -3887,6 +3887,26 @@ static void FrameOnChar(WindowInfo* win, WPARAM key, LPARAM info = 0) {
 
     auto* ctrl = win->ctrl;
     DisplayModel* dm = win->AsFixed();
+    auto currentTab = win->currentTab;
+
+    auto openAnnotsInEditWindow = [&win](Vec<Annotation*>& annots, bool isShift) -> void {
+        if (annots.empty()) {
+            return;
+        }
+        WindowInfoRerender(win);
+        if (isShift) {
+            StartEditAnnotations(win->currentTab, annots);
+            return;
+        }
+        auto w = win->currentTab->editAnnotsWindow;
+        if (w) {
+            for (auto annot : annots) {
+                AddAnnotationToEditWindow(w, annot);
+            }
+        } else {
+            DeleteVecMembers(annots);
+        }
+    };
 
     switch (key) {
         case VK_SPACE:
@@ -3986,32 +4006,20 @@ static void FrameOnChar(WindowInfo* win, WPARAM key, LPARAM info = 0) {
             if (!isShift) {
                 gGlobalPrefs->fixedPageUI.invertColors ^= true;
                 UpdateDocumentColors();
+                UpdateTreeCtrlColors(win);
+                // UpdateUiForCurrentTab(win);
             }
             break;
         case 'm':
             ShowCursorPositionInDoc(win);
             break;
+        case 'u': {
+            auto annots = MakeAnnotationFromSelection(currentTab, AnnotationType::Underline);
+            openAnnotsInEditWindow(annots, isShift);
+        } break;
         case 'a': {
-            auto annots = MakeAnnotationFromSelection(win->currentTab, AnnotationType::Highlight);
-            if (!annots.empty()) {
-                for (auto annot : annots) {
-                    PdfColor col = GetAnnotationHighlightColor();
-                    SetColor(annot, col);
-                }
-                WindowInfoRerender(win);
-                if (isShift) {
-                    StartEditAnnotations(win->currentTab, annots);
-                } else {
-                    auto w = win->currentTab->editAnnotsWindow;
-                    if (w) {
-                        for (auto annot : annots) {
-                            AddAnnotationToEditWindow(w, annot);
-                        }
-                    } else {
-                        DeleteVecMembers(annots);
-                    }
-                }
-            }
+            auto annots = MakeAnnotationFromSelection(currentTab, AnnotationType::Highlight);
+            openAnnotsInEditWindow(annots, isShift);
         } break;
     }
 }

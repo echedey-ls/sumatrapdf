@@ -19,12 +19,10 @@ import (
 var (
 	must              = u.Must
 	panicIf           = u.PanicIf
-	fatalIf           = panicIf
 	urlify            = u.Slug
 	fileExists        = u.FileExists
 	dirExists         = u.DirExists
 	pathExists        = u.PathExists
-	normalizeNewlines = u.NormalizeNewlines
 	formatSize        = u.FormatSize
 	getFileSize       = u.FileSize
 	copyFile          = u.CopyFile
@@ -59,6 +57,15 @@ func runExeMust(c string, args ...string) []byte {
 	return []byte(out)
 }
 
+func runExeInDirMust(dir string, c string, args ...string) []byte {
+	cmd := exec.Command(c, args...)
+	logf(ctx(), "> %s\n", cmd)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	must(err)
+	return []byte(out)
+}
+
 func runExeLoggedMust(c string, args ...string) []byte {
 	cmd := exec.Command(c, args...)
 	out := runCmdLoggedMust(cmd)
@@ -74,28 +81,6 @@ func makePrintDuration(name string) func() {
 	}
 }
 
-// run a .bat script and capture environment variables after
-func getEnvAfterScript(path string) []string {
-	if !fileExists(path) {
-		return nil
-	}
-	dir, script := filepath.Split(path)
-
-	// TODO: maybe use COMSPEC env variable instead of "cmd.exe" (more robust)
-	cmd := exec.Command("cmd.exe", "/c", script+" & set")
-	cmd.Dir = dir
-	logf(ctx(), "Executing: %s in %s\n", cmd, cmd.Dir)
-	resBytes, err := cmd.Output()
-	must(err)
-	res := string(resBytes)
-	parts := strings.Split(res, "\n")
-	panicIf(len(parts) == 1, "split failed\nres:\n%s\n", res)
-	for idx, env := range parts {
-		parts[idx] = strings.TrimSpace(env)
-	}
-	return parts
-}
-
 func fileSizeMust(path string) int64 {
 	size := getFileSize(path)
 	panicIf(size == -1)
@@ -108,24 +93,6 @@ func removeFileMust(path string) {
 	}
 	err := os.Remove(path)
 	must(err)
-}
-
-func findFile(dir string, match func(string, os.FileInfo) bool) {
-	fn := func(path string, info os.FileInfo, err error) error {
-		if match(path, info) {
-			logf(ctx(), "Found: '%s'\n", path)
-		}
-		return nil
-	}
-	filepath.Walk(dir, fn)
-}
-
-func findSigntool() {
-	isSigntool := func(path string, fi os.FileInfo) bool {
-		s := strings.ToLower(fi.Name())
-		return s == "signtool.exe"
-	}
-	findFile(`C:\Program Files (x86)`, isSigntool)
 }
 
 func evalTmpl(s string, v interface{}) string {
@@ -186,6 +153,7 @@ func findLargestFileByExt() {
 	for _, d := range dirs {
 		startDir := filepath.Join(drive, d)
 		filepath.WalkDir(startDir, func(path string, d fs.DirEntry, err error) error {
+			must(err)
 			if !d.Type().IsRegular() {
 				return nil
 			}
@@ -212,8 +180,15 @@ func findLargestFileByExt() {
 	logf(ctx(), "processed %d files\n", nFiles)
 }
 
+func fmdCmdShort(cmd *exec.Cmd) string {
+	cmd2 := *cmd
+	exePath := filepath.Base(cmd.Path)
+	cmd2.Path = exePath
+	return cmd2.String()
+}
+
 func runCmdLoggedMust(cmd *exec.Cmd) string {
-	logf(ctx(), "> %s\n", cmd.String())
+	logf(ctx(), ">2 %s\n", fmdCmdShort(cmd))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -226,12 +201,6 @@ func createDirMust(path string) string {
 	err := os.MkdirAll(path, 0755)
 	must(err)
 	return path
-}
-
-func userHomeDirMust() string {
-	s, err := os.UserHomeDir()
-	must(err)
-	return s
 }
 
 func createDirForFile(path string) error {
